@@ -38,53 +38,25 @@ A simple and functional Todo application built with React Native and Expo. The a
 
 The screenshots below demonstrate the main application screens and states in both light and dark mode where applicable.
 
-### Empty Task List
+![Empty Task List - Light Mode](./assets/screenshots/empty-task-list-light.png)
 
-#### Light Mode
+![Empty Task List - Dark Mode](./assets/screenshots/empty-task-list-dark.png)
 
-![Empty Task List - Light Mode](./screenshots/empty-task-list-light.png)
+![Task List With Tasks - Light Mode](./assets/screenshots/task-list-with-tasks-light.png)
 
-#### Dark Mode
+![Task List With Tasks - Dark Mode](./assets/screenshots/task-list-with-tasks-dark.png)
 
-![Empty Task List - Dark Mode](./screenshots/empty-task-list-dark.png)
+![Add Task - Light Mode](./assets/screenshots/add-task-light.png)
 
-### Task List With Tasks
+![Add Task - Dark Mode](./assets/screenshots/add-task-dark.png)
 
-#### Light Mode
+![Voice Input Listening - Light Mode](./assets/screenshots/voice-input-listening-light.png)
 
-![Task List With Tasks - Light Mode](./screenshots/task-list-with-tasks-light.png)
+![Voice Input Listening - Dark Mode](./assets/screenshots/voice-input-listening-dark.png)
 
-#### Dark Mode
+![Search and Filters](./assets/screenshots/search-and-filters.png)
 
-![Task List With Tasks - Dark Mode](./screenshots/task-list-with-tasks-dark.png)
-
-### Add Task
-
-#### Light Mode
-
-![Add Task - Light Mode](./screenshots/add-task-light.png)
-
-#### Dark Mode
-
-![Add Task - Dark Mode](./screenshots/add-task-dark.png)
-
-### Voice Input — Listening
-
-#### Light Mode
-
-![Voice Input Listening - Light Mode](./screenshots/voice-input-listening-light.png)
-
-#### Dark Mode
-
-![Voice Input Listening - Dark Mode](./screenshots/voice-input-listening-dark.png)
-
-### Search and Filters
-
-![Search and Filters](./screenshots/search-and-filters.png)
-
-### Due Dates
-
-![Due Dates](./screenshots/due-dates.png)
+![Due Dates](./assets/screenshots/due-dates.png)
 
 ## Tech Stack
 
@@ -157,11 +129,8 @@ For iOS development, macOS with Xcode is required.
 
 Clone the repository:
 
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+git clone [<YOUR_GITHUB_REPOSITORY_URL>](https://github.com/BremaBoy/to-do-app)
 
-Navigate into the project:
-
-cd <YOUR_PROJECT_FOLDER>
 
 Install dependencies:
 
