@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,24 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
-  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import { voiceService } from '../Services/VoiceService';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
+
+import {
+  voiceService,
+  ParsedVoiceTask,
+} from '../Services/VoiceService';
 
 interface VoiceInputModalProps {
   visible: boolean;
   onClose: () => void;
-  onTasksCreated: (tasks: string[]) => void;
+  onTasksCreated: (tasks: ParsedVoiceTask[]) => void;
   darkMode: boolean;
 }
 
@@ -30,215 +38,307 @@ export const VoiceInputModal: React.FC<VoiceInputModalProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordTime, setRecordTime] = useState('00:00');
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [permissionResponse, requestPermission] = Audio.usePermissions();
-  
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
-  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
 
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartTimeRef = useRef<number | null>(null);
+
+  /**
+   * expo-audio recorder
+   */
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  /**
+   * Start/stop pulse animation
+   */
   useEffect(() => {
     if (isRecording) {
-      Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 800,
+            toValue: 1.15,
+            duration: 700,
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 800,
+            duration: 700,
             useNativeDriver: true,
           }),
         ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
+      );
+
+      animation.start();
+
+      return () => {
+        animation.stop();
+      };
     }
+
+    pulseAnim.setValue(1);
+  }, [isRecording, pulseAnim]);
+
+  /**
+   * Recording timer
+   */
+  useEffect(() => {
+    if (!isRecording) {
+      return;
+    }
+
+    recordingStartTimeRef.current = Date.now();
+
+    timerRef.current = setInterval(() => {
+      if (!recordingStartTimeRef.current) {
+        return;
+      }
+
+      const elapsed = Date.now() - recordingStartTimeRef.current;
+
+      const minutes = Math.floor(elapsed / 60000);
+      const seconds = Math.floor((elapsed % 60000) / 1000);
+
+      setRecordTime(
+        `${minutes.toString().padStart(2, '0')}:${seconds
+          .toString()
+          .padStart(2, '0')}`
+      );
+    }, 250);
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
-  }, [isRecording, pulseAnim]);
+  }, [isRecording]);
 
-  const startTimer = () => {
-    const startTime = Date.now();
-    timerRef.current = setInterval(() => {
-      const duration = Date.now() - startTime;
-      const minutes = Math.floor(duration / 60000);
-      const seconds = Math.floor((duration % 60000) / 1000);
-      setRecordTime(
-        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-      );
-    }, 1000);
-  };
-
-  const stopTimer = () => {
+  /**
+   * Reset timer
+   */
+  const resetTimer = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
+    recordingStartTimeRef.current = null;
+    setRecordTime('00:00');
   };
 
+  /**
+   * Start recording
+   */
   const startRecording = async () => {
     try {
-      if (permissionResponse?.status !== 'granted') {
-        console.log('Requesting permission..');
-        const permission = await requestPermission();
-        if (permission.status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant microphone permission to use voice input.');
-          return;
-        }
+      console.log('[Voice] Requesting microphone permission...');
+
+      const permission = await requestRecordingPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          'Microphone Permission Required',
+          'Please allow microphone access in your iPhone Settings to use voice input.',
+          [{ text: 'OK' }]
+        );
+        return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
+      console.log('[Voice] Microphone permission granted');
+
+      /**
+       * Configure audio mode
+       */
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const recordingOptions: Audio.RecordingOptions = {
-        android: {
-          extension: '.m4a',
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
-          numberOfChannels: 2,
-          bitRate: 128000,
-        },
-        ios: {
-          extension: '.m4a',
-          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-          audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 44100,
-          numberOfChannels: 2,
-          bitRate: 128000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm',
-          bitsPerSecond: 128000,
-        },
-      };
+      /**
+       * Reset timer before starting
+       */
+      resetTimer();
 
-      console.log('Starting recording..');
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
-      setRecording(recording);
+      console.log('[Voice] Preparing recorder...');
+
+      await audioRecorder.prepareToRecordAsync();
+
+      console.log('[Voice] Starting recorder...');
+
+      audioRecorder.record();
+
       setIsRecording(true);
-      setRecordTime('00:00');
-      startTimer();
-      console.log('Recording started');
-    } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording');
+
+      console.log('[Voice] Recording started');
+    } catch (error) {
+      console.error('[Voice] Failed to start recording:', error);
+
+      setIsRecording(false);
+      resetTimer();
+
+      Alert.alert(
+        'Recording Error',
+        'Unable to start recording. Please make sure microphone permission is enabled.'
+      );
     }
   };
 
+  /**
+   * Stop recording and process audio
+   */
   const stopRecording = async () => {
-    console.log('Stopping recording..');
-    setRecording(null); // Clear state early
-    setIsRecording(false);
-    stopTimer();
-    
-    if (!recording) {
-        return;
+    if (!isRecording) {
+      return;
     }
 
     try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-      
-      const uri = recording.getURI(); 
-      console.log('Recording stopped and stored at', uri);
+      console.log('[Voice] Stopping recording...');
+
+      setIsRecording(false);
+      resetTimer();
+
+      await audioRecorder.stop();
+
+      console.log('[Voice] Recording stopped');
+
+      const uri = audioRecorder.uri;
+
+      console.log('[Voice] Recording URI:', uri);
 
       if (!uri) {
-        Alert.alert('Error', 'No recording found');
+        Alert.alert(
+          'Recording Error',
+          'No audio file was created. Please try recording again.'
+        );
         return;
       }
 
       setIsProcessing(true);
 
-      // Transcribe audio using OpenAI Whisper
+      console.log('[Voice] Sending audio for transcription...');
+
+      /**
+       * Send audio to Groq Whisper
+       */
       const transcribedText = await voiceService.transcribeAudio(uri);
-      console.log('Transcribed text:', transcribedText);
+
+      console.log('[Voice] Transcription:', transcribedText);
 
       if (!voiceService.isValidTranscription(transcribedText)) {
+        setIsProcessing(false);
+
         Alert.alert(
           'No Speech Detected',
-          'Could not understand the audio. Please try again.'
+          'We could not understand your recording. Please speak clearly and try again.'
         );
-        setIsProcessing(false);
+
         return;
       }
 
-      // Split into individual tasks
-      const tasks = voiceService.splitIntoTasks(transcribedText);
-      console.log('Split tasks:', tasks);
+      /**
+       * Split transcription into individual tasks
+       */
+      const tasks = voiceService.parseVoiceTasks(transcribedText);
+
+      console.log('[Voice] Generated tasks:', tasks);
 
       if (tasks.length === 0) {
+        setIsProcessing(false);
+
         Alert.alert(
           'No Tasks Found',
-          'Could not extract tasks from the audio. Please try again.'
+          'We could not find any tasks in your recording. Please try again.'
         );
-        setIsProcessing(false);
+
         return;
       }
 
+      /**
+       * Finish processing
+       */
       setIsProcessing(false);
+
       onTasksCreated(tasks);
+
       onClose();
 
-      // Show success message
       Alert.alert(
-        'Success',
-        `Added ${tasks.length} task${tasks.length > 1 ? 's' : ''} from voice input!`
+        'Tasks Added',
+        `Added ${tasks.length} task${tasks.length === 1 ? '' : 's'} from your voice input.`
       );
     } catch (error) {
-      console.error('Error processing audio:', error);
+      console.error('[Voice] Error processing recording:', error);
+
       setIsProcessing(false);
+
       Alert.alert(
         'Processing Error',
-        'Failed to process voice input. Please try again or check your internet connection.'
+        'Failed to process your voice recording. Please check your internet connection and try again.'
       );
     }
   };
 
-  const handleClose = async () => {
-    if (isRecording && recording) {
+  /**
+   * Cancel active recording
+   */
+  const cancelRecording = async () => {
+    try {
+      console.log('[Voice] Cancelling recording...');
+
+      setIsRecording(false);
+      resetTimer();
+
+      await audioRecorder.stop();
+
+      console.log('[Voice] Recording cancelled');
+    } catch (error) {
+      console.error('[Voice] Error cancelling recording:', error);
+    }
+  };
+
+  /**
+   * Close modal
+   */
+  const handleClose = () => {
+    if (isProcessing) {
+      return;
+    }
+
+    if (isRecording) {
       Alert.alert(
         'Cancel Recording',
-        'Are you sure you want to cancel the recording?',
+        'Are you sure you want to cancel this recording?',
         [
-          { text: 'No', style: 'cancel' },
           {
-            text: 'Yes',
+            text: 'Keep Recording',
+            style: 'cancel',
+          },
+          {
+            text: 'Cancel Recording',
             style: 'destructive',
             onPress: async () => {
-              stopTimer();
-              try {
-                  await recording.stopAndUnloadAsync();
-              } catch (e) {
-                  console.error('Error unloading recording on close', e);
-              }
-              setRecording(null);
-              setIsRecording(false);
+              await cancelRecording();
               onClose();
             },
           },
         ]
       );
-    } else {
-      onClose();
+
+      return;
     }
+
+    resetTimer();
+    onClose();
   };
+
+  /**
+   * Reset state whenever modal closes
+   */
+  useEffect(() => {
+    if (!visible && !isRecording && !isProcessing) {
+      resetTimer();
+    }
+  }, [visible, isRecording, isProcessing]);
 
   return (
     <Modal
@@ -250,21 +350,42 @@ export const VoiceInputModal: React.FC<VoiceInputModalProps> = ({
       <View style={styles.overlay}>
         <View style={[styles.modal, darkMode && styles.modalDark]}>
           {isProcessing ? (
+            /**
+             * Processing UI
+             */
             <View style={styles.processingContainer}>
-              <ActivityIndicator size="large" color="#3B82F6" />
-              <Text style={[styles.processingText, darkMode && styles.textDark]}>
+              <ActivityIndicator
+                size="large"
+                color="#3B82F6"
+              />
+
+              <Text
+                style={[
+                  styles.processingText,
+                  darkMode && styles.textDark,
+                ]}
+              >
                 Processing your voice...
               </Text>
-              <Text style={[styles.processingSubtext, darkMode && styles.subtextDark]}>
-                This may take a few seconds
+
+              <Text
+                style={[
+                  styles.processingSubtext,
+                  darkMode && styles.subtextDark,
+                ]}
+              >
+                Transcribing your recording and creating tasks.
               </Text>
             </View>
           ) : (
             <>
+              {/* Microphone */}
               <Animated.View
                 style={[
                   styles.micButtonContainer,
-                  { transform: [{ scale: pulseAnim }] },
+                  {
+                    transform: [{ scale: pulseAnim }],
+                  },
                 ]}
               >
                 <TouchableOpacity
@@ -274,58 +395,128 @@ export const VoiceInputModal: React.FC<VoiceInputModalProps> = ({
                       ? styles.micButtonRecording
                       : styles.micButtonIdle,
                   ]}
-                  onPress={isRecording ? stopRecording : startRecording}
-                  disabled={isProcessing}
+                  onPress={
+                    isRecording
+                      ? stopRecording
+                      : startRecording
+                  }
+                  activeOpacity={0.8}
                 >
                   <Feather
                     name={isRecording ? 'square' : 'mic'}
-                    size={48}
+                    size={42}
                     color="#FFFFFF"
                   />
                 </TouchableOpacity>
               </Animated.View>
 
+              {/* Recording indicator */}
               {isRecording && (
                 <View style={styles.recordingIndicator}>
                   <View style={styles.recordingDot} />
-                  <Text style={[styles.recordingText, darkMode && styles.textDark]}>
+
+                  <Text
+                    style={[
+                      styles.recordingText,
+                      darkMode && styles.textDark,
+                    ]}
+                  >
                     {recordTime}
                   </Text>
                 </View>
               )}
 
-              <Text style={[styles.instructionText, darkMode && styles.textDark]}>
-                {isRecording ? 'Tap to stop recording' : 'Tap to start recording'}
+              {/* Main instruction */}
+              <Text
+                style={[
+                  styles.instructionText,
+                  darkMode && styles.textDark,
+                ]}
+              >
+                {isRecording
+                  ? 'Tap to stop recording'
+                  : 'Tap the microphone to start'}
               </Text>
 
-              <Text style={[styles.hintText, darkMode && styles.subtextDark]}>
-                Speak naturally: "Buy groceries and call mom and schedule dentist"
+              {/* Voice example */}
+              <Text
+                style={[
+                  styles.hintText,
+                  darkMode && styles.subtextDark,
+                ]}
+              >
+                Try saying:
+                {'\n'}
+                "Buy groceries and call mom and schedule dentist"
               </Text>
 
-              <View style={styles.examplesContainer}>
-                <Text style={[styles.examplesTitle, darkMode && styles.subtextDark]}>
-                  Tips:
+              {/* Tips */}
+              <View
+                style={[
+                  styles.examplesContainer,
+                  darkMode && styles.examplesContainerDark,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.examplesTitle,
+                    darkMode && styles.subtextDark,
+                  ]}
+                >
+                  Voice Input Tips
                 </Text>
-                <Text style={[styles.exampleText, darkMode && styles.subtextDark]}>
-                  • Say "and" between tasks
+
+                <Text
+                  style={[
+                    styles.exampleText,
+                    darkMode && styles.subtextDark,
+                  ]}
+                >
+                  • Speak naturally
                 </Text>
-                <Text style={[styles.exampleText, darkMode && styles.subtextDark]}>
-                  • Speak clearly
+
+                <Text
+                  style={[
+                    styles.exampleText,
+                    darkMode && styles.subtextDark,
+                  ]}
+                >
+                  • Say "and" between separate tasks
                 </Text>
-                <Text style={[styles.exampleText, darkMode && styles.subtextDark]}>
-                  • Keep it under 60 seconds
+
+                <Text
+                  style={[
+                    styles.exampleText,
+                    darkMode && styles.subtextDark,
+                  ]}
+                >
+                  • Speak clearly for better transcription
+                </Text>
+
+                <Text
+                  style={[
+                    styles.exampleText,
+                    darkMode && styles.subtextDark,
+                  ]}
+                >
+                  • Keep recordings under 60 seconds
                 </Text>
               </View>
             </>
           )}
 
+          {/* Close button */}
           <TouchableOpacity
             style={styles.closeButton}
             onPress={handleClose}
             disabled={isProcessing}
           >
             <Text style={styles.closeText}>
-              {isProcessing ? 'Please wait...' : 'Cancel'}
+              {isProcessing
+                ? 'Please wait...'
+                : isRecording
+                ? 'Cancel'
+                : 'Close'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -340,44 +531,56 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
+
   modal: {
+    width: '100%',
+    maxWidth: 380,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 32,
     alignItems: 'center',
-    minWidth: 320,
-    maxWidth: '90%',
   },
+
   modalDark: {
     backgroundColor: '#1F2937',
   },
+
   micButtonContainer: {
     marginBottom: 20,
   },
+
   micButton: {
     width: 96,
     height: 96,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
+
   micButtonIdle: {
     backgroundColor: '#3B82F6',
   },
+
   micButtonRecording: {
     backgroundColor: '#EF4444',
   },
+
   recordingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
   },
+
   recordingDot: {
     width: 8,
     height: 8,
@@ -385,26 +588,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     marginRight: 8,
   },
+
   recordingText: {
     fontSize: 24,
     fontWeight: '600',
     color: '#111827',
     fontVariant: ['tabular-nums'],
   },
+
   instructionText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 8,
     textAlign: 'center',
+    marginBottom: 12,
   },
+
   hintText: {
     fontSize: 14,
+    lineHeight: 21,
     color: '#6B7280',
     textAlign: 'center',
     marginBottom: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
   },
+
   examplesContainer: {
     backgroundColor: '#F3F4F6',
     borderRadius: 12,
@@ -412,46 +620,64 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 20,
   },
+
+  examplesContainerDark: {
+    backgroundColor: '#111827',
+  },
+
   examplesTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 10,
   },
+
   exampleText: {
     fontSize: 13,
     color: '#6B7280',
-    marginBottom: 4,
+    marginBottom: 5,
+    lineHeight: 19,
   },
+
   processingContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 30,
+    minHeight: 220,
+    justifyContent: 'center',
   },
+
   processingText: {
     fontSize: 18,
     fontWeight: '600',
     color: '#111827',
     marginTop: 20,
     marginBottom: 8,
+    textAlign: 'center',
   },
+
   processingSubtext: {
     fontSize: 14,
     color: '#6B7280',
     textAlign: 'center',
+    lineHeight: 20,
   },
+
   closeButton: {
-    marginTop: 16,
+    marginTop: 8,
     paddingVertical: 12,
     paddingHorizontal: 24,
   },
+
   closeText: {
     fontSize: 16,
     color: '#EF4444',
     fontWeight: '600',
   },
+
   textDark: {
     color: '#F9FAFB',
   },
+
   subtextDark: {
     color: '#9CA3AF',
   },

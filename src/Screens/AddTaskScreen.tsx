@@ -34,46 +34,100 @@ export const AddTaskScreen: React.FC<Props> = ({ navigation }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddTask = async () => {
-    // Validation
-    if (!title.trim()) {
-      Alert.alert('Empty Title', 'Please enter a task title');
-      return;
-    }
+  // Validation
+  const trimmedTitle = title.trim();
 
-    if (title.trim().length < 3) {
-      Alert.alert('Title Too Short', 'Task title must be at least 3 characters');
-      return;
-    }
+  if (!trimmedTitle) {
+    Alert.alert('Empty Title', 'Please enter a task title');
+    return;
+  }
 
-    if (title.trim().length > 100) {
-      Alert.alert('Title Too Long', 'Task title must be less than 100 characters');
-      return;
-    }
+  if (trimmedTitle.length < 3) {
+    Alert.alert(
+      'Title Too Short',
+      'Task title must be at least 3 characters',
+    );
+    return;
+  }
 
-    setIsSubmitting(true);
+  if (trimmedTitle.length > 100) {
+    Alert.alert(
+      'Title Too Long',
+      'Task title must be less than 100 characters',
+    );
+    return;
+  }
 
-    try {
-      const newTask: Task = {
-        id: Date.now().toString(),
-        title: title.trim(),
-        description: description.trim() || undefined,
-        completed: false,
-        createdAt: Date.now(),
-        dueDate: dueDate?.getTime(),
-      };
+  setIsSubmitting(true);
 
-      // Load existing tasks and add new one
-      const existingTasks = await storageService.loadTasks();
-      await storageService.saveTasks([...existingTasks, newTask]);
+  try {
+    // Load existing tasks
+    const existingTasks = await storageService.loadTasks();
 
-      // Navigate back with success
-      navigation.goBack();
-    } catch (error) {
-      console.error('Error adding task:', error);
-      Alert.alert('Error', 'Failed to add task. Please try again.');
+    // Normalize the title for duplicate comparison
+    const normalizedTitle = trimmedTitle.toLowerCase();
+
+    // Check if a task with the same title already exists
+    // for the same calendar day
+    const isDuplicate = existingTasks.some(task => {
+      const sameTitle =
+        task.title.trim().toLowerCase() === normalizedTitle;
+
+      // Both tasks have no due date
+      if (!dueDate && !task.dueDate) {
+        return sameTitle;
+      }
+
+      // One task has a due date and the other doesn't
+      if (!dueDate || !task.dueDate) {
+        return false;
+      }
+
+      // Compare calendar dates instead of exact timestamps
+      const newTaskDate = new Date(dueDate);
+      const existingTaskDate = new Date(task.dueDate);
+
+      const sameDay =
+        newTaskDate.getFullYear() === existingTaskDate.getFullYear() &&
+        newTaskDate.getMonth() === existingTaskDate.getMonth() &&
+        newTaskDate.getDate() === existingTaskDate.getDate();
+
+      return sameTitle && sameDay;
+    });
+
+    if (isDuplicate) {
+      Alert.alert(
+        'Duplicate Task',
+        `You already have a task called "${trimmedTitle}" for this date.`,
+      );
       setIsSubmitting(false);
+      return;
     }
-  };
+
+    // Create new task
+    const newTask: Task = {
+      id: Date.now().toString(),
+      title: trimmedTitle,
+      description: description.trim() || undefined,
+      completed: false,
+      createdAt: Date.now(),
+      dueDate: dueDate?.getTime(),
+    };
+
+    // Save task
+    await storageService.saveTasks([...existingTasks, newTask]);
+
+    // Navigate back
+    navigation.goBack();
+  } catch (error) {
+    console.error('Error adding task:', error);
+    Alert.alert(
+      'Error',
+      'Failed to add task. Please try again.',
+    );
+    setIsSubmitting(false);
+  }
+};
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');

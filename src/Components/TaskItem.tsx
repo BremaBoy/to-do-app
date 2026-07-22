@@ -66,8 +66,12 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     }
   };
 
-  const isOverdue = task.dueDate && task.dueDate < Date.now() && !task.completed;
-
+  const isOverdue =
+  task.dueDate &&
+  new Date(task.dueDate).setHours(0, 0, 0, 0) <
+    new Date().setHours(0, 0, 0, 0) &&
+  !task.completed;
+  
   return (
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
       <View style={[styles.container, darkMode && styles.containerDark]}>
