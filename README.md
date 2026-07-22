@@ -71,45 +71,51 @@ The screenshots below demonstrate the main application screens and states in bot
 
 ## Project Structure
 
-.
-├── src
-│   ├── Components
+```text
+to-do-app/
+├── src/
+│   ├── Components/
 │   │   ├── FloatingActionButton.tsx
 │   │   ├── TaskItem.tsx
 │   │   └── VoiceInputModal.tsx
 │   │
-│   ├── Context
+│   ├── Context/
 │   │   └── ThemeContext.tsx
 │   │
-│   ├── Navigation
+│   ├── Navigation/
 │   │   └── AppNavigator.tsx
 │   │
-│   ├── Screens
+│   ├── Screens/
 │   │   ├── AddTaskScreen.tsx
 │   │   └── TaskListScreen.tsx
 │   │
-│   ├── Services
+│   ├── Services/
 │   │   ├── StorageService.ts
 │   │   └── VoiceService.ts
 │   │
-│   └── Types
-│       └── index.ts
+│   ├── Types/
+│   │   └── index.ts
+│   │
+│   └── Utils/
+│       └── taskValidation.ts
 │
-├── screenshots
-│   ├── empty-task-list-light.png
-│   ├── empty-task-list-dark.png
-│   ├── task-list-with-tasks-light.png
-│   ├── task-list-with-tasks-dark.png
-│   ├── add-task-light.png
-│   ├── add-task-dark.png
-│   ├── voice-input-listening-light.png
-│   ├── voice-input-listening-dark.png
-│   ├── search-and-filters.png
-│   └── due-dates.png
+├── assets/
+│   └── screenshots/
+│       ├── empty-task-list-light.png
+│       ├── empty-task-list-dark.png
+│       ├── task-list-with-tasks-light.png
+│       ├── task-list-with-tasks-dark.png
+│       ├── add-task-light.png
+│       ├── add-task-dark.png
+│       ├── voice-input-listening-light.png
+│       ├── voice-input-listening-dark.png
+│       ├── search-and-filters.png
+│       └── due-dates.png
 │
 ├── App.tsx
 ├── app.json
 ├── package.json
+├── package-lock.json
 └── README.md
 
 ## Getting Started
